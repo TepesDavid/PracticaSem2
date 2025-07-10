@@ -1,0 +1,16 @@
+/index
+/home
+/about
+/contact
+/profile
+/files
+/help
+/blog
+/posts
+/articles
+/news
+/faq
+/docs
+/terms
+/privacy
+/sitemap

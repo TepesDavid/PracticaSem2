@@ -1,23 +1,25 @@
+# --- downloader.py ---
 import os
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-import hashlib # Pentru a genera nume unice de fișiere
-from utils import get_local_page_folder_name, get_local_page_path # Importăm funcțiile helper
+from selenium.webdriver.firefox.options import Options as FirefoxOptions 
+from selenium.webdriver.firefox.service import Service as FirefoxService 
+import hashlib 
+from utils import get_local_page_folder_name, get_local_page_path 
 
-CHROME_DRIVER_PATH = "chromedriver" 
+GECKO_DRIVER_PATH = "/usr/local/bin/geckodriver" 
 
 def get_html(url, use_selenium=True):
 
     if not use_selenium:
-        
+
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'en-US,en;q=0.9,ro;q=0.8', 
-            'DNT': '1', # Do Not Track
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Firefox/126.0', 
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5,ro;q=0.3', 
+            'DNT': '1', 
             'Upgrade-Insecure-Requests': '1'
         }
         try:
@@ -28,16 +30,15 @@ def get_html(url, use_selenium=True):
             print(f"[eroare-requests] Nu am putut descărca {url}: {e}")
             return None
 
-    # Configurare Selenium
-    options = Options()
-    options.headless = True # Rulează browser-ul în mod invizibil
-    options.add_argument("--no-sandbox") 
-    options.add_argument("--disable-dev-shm-usage") # Reduce problemele de memorie
-    options.add_argument("--window-size=1920,1080") # Setează o dimensiune a ferestrei pentru a asigura randarea completă
+    # Selenium configuration for Firefox
+    options = FirefoxOptions() 
+    options.headless = True # Run browser in invisible mode
+    options.add_argument("--window-size=1920,1080") 
 
     driver = None
     try:
-        driver = webdriver.Chrome(executable_path=CHROME_DRIVER_PATH, options=options)
+        service = FirefoxService(executable_path=GECKO_DRIVER_PATH) 
+        driver = webdriver.Firefox(service=service, options=options) 
         driver.get(url)
         html = driver.page_source
         return html
@@ -49,9 +50,16 @@ def get_html(url, use_selenium=True):
             driver.quit() 
 
 def download_page(url, output_dir, snapshot_root, use_selenium=True):
-
+    """
+    Downloads a web page, its resources, and modifies links for offline access.
+    :param url: The URL of the current page to download.
+    :param output_dir: The local directory where the page will be saved (e.g., archive/domain/timestamp/page_name).
+    :param snapshot_root: The root directory of the entire archive (e.g., archive/domain/timestamp).
+    :param use_selenium: Use Selenium for dynamic pages.
+    """
     os.makedirs(output_dir, exist_ok=True)
     
+    # Directory for this page's resources
     resources_dir = os.path.join(output_dir, "_resources")
     os.makedirs(resources_dir, exist_ok=True)
 
@@ -65,77 +73,83 @@ def download_page(url, output_dir, snapshot_root, use_selenium=True):
         return
 
     soup = BeautifulSoup(html, 'html.parser')
-    base_netloc = urlparse(url).netloc 
+    base_netloc = urlparse(url).netloc # Domain of the current page
 
-
+    # List of file extensions that will be treated as downloadable resources
+    # and will be rewritten to _resources/
     DOWNLOADABLE_FILE_EXTENSIONS = [
         '.pdf', '.zip', '.rar', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', 
         '.jpg', '.jpeg', '.png', '.gif', '.svg', '.mp4', '.mp3', '.avi', '.mov', 
         '.txt', '.csv', '.xml', '.json', '.ico', '.webp', '.woff', '.woff2', '.ttf', '.otf'
     ]
 
+    # --- 1. Download and modify paths for resources (img, script, link) ---
     for tag in soup.find_all(['img', 'script', 'link']):
         attr = 'src' if tag.name != 'link' else 'href'
         if tag.has_attr(attr):
-            resource_url = urljoin(url, tag[attr]) 
+            resource_url = urljoin(url, tag[attr]) # Transform to absolute URL
             parsed_resource_url = urlparse(resource_url)
 
-            # Verifică dacă resursa este internă sau externă și dacă este un fișier valid
-            if parsed_resource_url.scheme in ['http', 'https'] and parsed_resource_url.netloc:
-                file_extension = os.path.splitext(parsed_resource_url.path)[1].lower()
-                # Dacă nu are extensie, încercăm să ghicim sau să punem un fallback
+            file_extension = os.path.splitext(parsed_resource_url.path)[1].lower()
+            
+            if parsed_resource_url.scheme in ['http', 'https'] and parsed_resource_url.netloc and \
+               (parsed_resource_url.path != '/' or parsed_resource_url.query or file_extension):
+                
+                # If no extension, try to guess or use a fallback
                 if not file_extension:
                     if tag.name == 'script': file_extension = '.js'
                     elif tag.name == 'link' and tag.has_attr('rel') and 'stylesheet' in tag['rel']: file_extension = '.css'
-                    elif tag.name == 'img': file_extension = '.png' # Fallback comun
-                    else: file_extension = '.bin' # Fallback generic
+                    elif tag.name == 'img': file_extension = '.png' # Common fallback
+                    else: file_extension = '.bin' # Generic fallback
 
-                # Folosim un hash al URL-ului complet pentru unicitate
+                # Use a hash of the full URL for uniqueness
                 unique_filename = hashlib.md5(resource_url.encode('utf-8')).hexdigest() + file_extension
                 local_resource_path = os.path.join(resources_dir, unique_filename)
                 
                 try:
-                    # Descarcă resursa
+                    # Download the resource
                     r = requests.get(resource_url, timeout=10, stream=True)
                     r.raise_for_status()
                     with open(local_resource_path, 'wb') as f:
                         for chunk in r.iter_content(chunk_size=8192):
                             f.write(chunk)
                     
-                    # Modifică atributul din HTML pentru a puncta către resursa locală
-                    # Calea este relativă la directorul paginii curente
-                    tag[attr] = os.path.join("_resources", unique_filename).replace(os.sep, '/') # Asigură căile cu slash-uri înainte de salvare
-                    # print(f"[resursă] Descărcat {resource_url} la {tag[attr]}") # Comentat pentru a reduce output-ul
+                    # Modify the HTML attribute to point to the local resource
+                    # The path is relative to the current page's directory
+                    tag[attr] = os.path.join("_resources", unique_filename).replace(os.sep, '/') # Ensure paths with forward slashes before saving
+                    # print(f"[resursă] Downloaded {resource_url} to {tag[attr]}") # Commented to reduce output
 
                 except requests.exceptions.RequestException as e:
-                    print(f"[skip-resursă] Nu am putut descărca {resource_url}: {e}")
+                    print(f"[skip-resursă] Could not download {resource_url}: {e}")
                     pass 
                 except Exception as e:
-                    print(f"[skip-resursă] Eroare generală la descărcarea {resource_url}: {e}")
+                    print(f"[skip-resursă] General error downloading {resource_url}: {e}")
                     pass
+            else:
+                print(f"[DEBUG-RESOURCE] Resource ignored (not a specific file or has empty path): {resource_url}")
 
 
-    # --- 2. Modifică link-urile interne (<a> tags) ---
+    # --- 2. Modify internal links (<a> tags) ---
     for a_tag in soup.find_all('a', href=True):
         original_href = a_tag['href']
-        full_link_url = urljoin(url, original_href) # URL absolut al link-ului
+        full_link_url = urljoin(url, original_href) # Transform to absolute URL
 
         parsed_link = urlparse(full_link_url)
 
-        print(f"[DEBUG-LINK] Procesez link: {original_href}")
-        print(f"[DEBUG-LINK] URL absolut: {full_link_url}")
-        print(f"[DEBUG-LINK] Domeniu link: {parsed_link.netloc}, Domeniu bază: {base_netloc}")
-        print(f"[DEBUG-LINK] Este intern și nu fragment: {parsed_link.netloc == base_netloc and not parsed_link.fragment}")
+        print(f"[DEBUG-LINK] Processing link: {original_href}")
+        print(f"[DEBUG-LINK] Absolute URL: {full_link_url}")
+        print(f"[DEBUG-LINK] Link domain: {parsed_link.netloc}, Base domain: {base_netloc}")
+        print(f"[DEBUG-LINK] Is internal and not fragment: {parsed_link.netloc == base_netloc and not parsed_link.fragment}")
 
-        # Verifică dacă link-ul este intern și nu este un fragment (#)
+        # Check if the link is internal and not a fragment (#)
         if parsed_link.netloc == base_netloc and not parsed_link.fragment:
             path_extension = os.path.splitext(parsed_link.path)[1].lower()
             
             if path_extension in DOWNLOADABLE_FILE_EXTENSIONS:
-                # Acest link este către un fișier descărcabil (ex: PDF)
-                print(f"[DEBUG-LINK] Link către fișier descărcabil: {original_href}")
+                # This link is to a downloadable file (e.g., PDF)
+                print(f"[DEBUG-LINK] Link to downloadable file: {original_href}")
                 
-                # Descarcă fișierul în directorul _resources al paginii curente
+                # Download the file to the _resources directory of the current page
                 unique_filename = hashlib.md5(full_link_url.encode('utf-8')).hexdigest() + path_extension
                 local_file_path = os.path.join(resources_dir, unique_filename)
                 
@@ -146,42 +160,45 @@ def download_page(url, output_dir, snapshot_root, use_selenium=True):
                         for chunk in r.iter_content(chunk_size=8192):
                             f.write(chunk)
                     
-                    # Rescrie link-ul din HTML pentru a puncta către fișierul local
+                    # Rewrite the HTML link to point to the local file
                     a_tag['href'] = os.path.join("_resources", unique_filename).replace(os.sep, '/')
-                    print(f"[DEBUG-LINK] Rescris link fișier: {original_href} -> {a_tag['href']}")
+                    print(f"[DEBUG-LINK] Rewrote file link: {original_href} -> {a_tag['href']}")
                 except requests.exceptions.RequestException as e:
-                    print(f"[skip-fisier] Nu am putut descărca fișierul {full_link_url}: {e}")
-                    pass # Lăsăm link-ul original dacă nu se poate descărca
+                    print(f"[skip-fisier] Could not download file {full_link_url}: {e}")
+                    pass # Leave original link if cannot download
                 except Exception as e:
-                    print(f"[skip-fisier] Eroare generală la descărcarea fișierului {full_link_url}: {e}")
+                    print(f"[skip-fisier] General error downloading file {full_link_url}: {e}")
                     pass
             else:
-                # Acest link este către o altă pagină HTML internă
-                print(f"[DEBUG-LINK] Link către altă pagină HTML: {original_href}")
+                # This link is to another internal HTML page
+                print(f"[DEBUG-LINK] Link to another HTML page: {original_href}")
                 
-                # Calculează calea locală unde ar trebui să fie salvată pagina țintă (fișierul index.html)
-                target_local_page_file_path = get_local_page_path(full_link_url, snapshot_root)
+                # Extract site and version from snapshot_root
+                # snapshot_root example: archive/www.davidyeiser.com/2025-07-14_16-41-25
+                parts = snapshot_root.split(os.sep)
+                site_name = parts[-2] # e.g., www.davidyeiser.com
+                version_name = parts[-1] # e.g., 2025-07-14_16-41-25
+
+                # Get the folder name for the target page
+                target_page_folder_name = get_local_page_folder_name(full_link_url)
+
+                # Construct the Flask-friendly absolute URL
+                # Example: /view/www.davidyeiser.com/2025-07-14_16-41-25/about/index.html
+                flask_absolute_url = f"/view/{site_name}/{version_name}/{target_page_folder_name}/index.html"
                 
-                # Calea directorului paginii curente, de unde se calculează calea relativă
-                current_page_local_dir = output_dir 
-                
-                # Calculează calea relativă de la directorul paginii curente la fișierul index.html al paginii țintă
-                relative_path = os.path.relpath(target_local_page_file_path, current_page_local_dir)
-                
-                # Înlocuiește link-ul original cu calea relativă locală
-                a_tag['href'] = relative_path.replace(os.sep, '/') # Asigură căile cu slash-uri
-                print(f"[DEBUG-LINK] Rescris link pagină: {original_href} -> {a_tag['href']}")
+                # Replace the original link with the Flask-friendly absolute URL
+                a_tag['href'] = flask_absolute_url
+                print(f"[DEBUG-LINK] Rewrote page link: {original_href} -> {a_tag['href']}")
         elif parsed_link.netloc != base_netloc:
-            print(f"[DEBUG-LINK] Link extern lăsat neschimbat: {original_href}")
-            pass # Lăsăm link-urile externe neschimbate
+            print(f"[DEBUG-LINK] External link left unchanged: {original_href}")
+            pass # Leave external links unchanged
 
 
-    # Salvează HTML-ul modificat al paginii
+    # Save the modified HTML of the page
     page_filename = os.path.join(output_dir, 'index.html')
     try:
         with open(page_filename, 'w', encoding='utf-8') as f:
             f.write(str(soup))
-        print(f"[✓] Pagina salvată: {page_filename}")
+        print(f"[✓] Page saved: {page_filename}")
     except Exception as e:
-        print(f"[eroare] Nu am putut salva pagina {url} la {page_filename}: {e}")
-
+        print(f"[eroare] Could not save page {url} to {page_filename}: {e}")

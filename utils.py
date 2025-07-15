@@ -11,12 +11,8 @@ def get_timestamp_folder(base_url, archive_root):
 
 def load_dictionary(filename):
 
-    try:
-        with open(filename, "r") as f:
+    with open(filename, "r") as f:
             return [line.strip() for line in f.readlines() if line.strip()]
-    except FileNotFoundError:
-        print(f"[!] Fișierul {filename} nu există. Creați-l cu căi (ex: /about, /contact).")
-        return []
 
 def get_local_page_folder_name(url):
 
@@ -32,7 +28,6 @@ def get_local_page_folder_name(url):
     if not safe_name:
         return "index"
     
-    # Limitează lungimea numelui pentru a evita probleme cu sistemele de fișiere
     max_len = 100
     if len(safe_name) > max_len:
         # Folosește un hash pentru a scurta și asigura unicitatea dacă numele e prea lung

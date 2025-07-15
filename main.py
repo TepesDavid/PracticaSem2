@@ -4,12 +4,11 @@ from utils import load_dictionary, get_timestamp_folder, get_local_page_folder_n
 import os
 
 ARCHIVE_DIR = "archive"
-USE_SELENIUM = False 
+USE_SELENIUM = True 
 
 if __name__ == "__main__":
     base_url = input("Introduceți URL-ul de arhivat (ex: https://www.example.com): ").strip()
     
-    # Verificam că URL-ul de bază se termină cu un slash pentru urljoin consistent
     if not base_url.endswith('/'):
         base_url += '/'
 

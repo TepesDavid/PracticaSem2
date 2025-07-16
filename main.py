@@ -29,8 +29,7 @@ if __name__ == "__main__":
         
         page_folder_name = get_local_page_folder_name(full_url)
         output_path_for_dict_url = os.path.join(snapshot_dir, page_folder_name)
-        
-        # Descarcă pagina din dicționar. Aceasta va fi salvată în output_path_for_dict_url/index.html
+
         download_page(full_url, output_path_for_dict_url, snapshot_dir, use_selenium=USE_SELENIUM)
 
     print("[✓] Snapshot complet salvat.")

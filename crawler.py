@@ -43,14 +43,13 @@ def crawl_domain(start_url, snapshot_root, use_selenium=True):
             
             soup = BeautifulSoup(html, 'html.parser')
             
-            # Extrage toate link-urile din tag-urile <a>
             for a in soup.find_all('a', href=True):
-                link = urljoin(url, a['href']) # Transformă link-ul într-un URL absolut
+                link = urljoin(url, a['href']) 
                 parsed_link = urlparse(link)
                 
                 # Verifică dacă link-ul este intern (același domeniu) și nu este un fragment (#)
                 if parsed_link.netloc == base_netloc and parsed_link.fragment == '':
-                    # Adaugă link-ul la coada de vizitat dacă nu a fost deja vizitat
+
                     if link.endswith('/'):
                         normalized_link = link
                     else:

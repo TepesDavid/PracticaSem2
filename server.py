@@ -120,7 +120,7 @@ TEMPLATE = """
 def index():
     """Listează toate domeniile arhivate disponibile."""
     if not os.path.exists(ARCHIVE_DIR):
-        return render_template_string(TEMPLATE, title="⚠️ Nicio arhivă disponibilă.", items=[], back_link=None)
+        return render_template_string(TEMPLATE, title=" Nicio arhivă disponibilă.", items=[], back_link=None)
     
     sites = sorted(os.listdir(ARCHIVE_DIR))
     items = [(site, f"/site/{site}") for site in sites]
@@ -139,9 +139,7 @@ def list_snapshots(site):
 
 @app.route("/snapshot/<site>/<version>")
 def list_pages_in_snapshot(site, version):
-    """
-    Listează paginile HTML arhivate într-un anumit snapshot.
-    """
+    """Listează paginile HTML arhivate într-un anumit snapshot."""
     base_snapshot_path = os.path.join(ARCHIVE_DIR, site, version)
     if not os.path.exists(base_snapshot_path):
         abort(404, description=f"Snapshot-ul '{version}' pentru '{site}' nu a fost găsit.")
@@ -164,18 +162,13 @@ def list_pages_in_snapshot(site, version):
 
 @app.route("/view/<site>/<version>/<path:page_path>")
 def view_snapshot_page(site, version, page_path):
-    """
-    Servește fișierul solicitat din arhiva snapshot.
-    Acest lucru include index.html și resursele din _resources/.
-    """
+    """Servește fișierul solicitat din arhiva snapshot."""
     print(f"[SERVER-DEBUG] Request received for site: {site}, version: {version}, page_path: {page_path}")
     
     # Construiește calea completă a fișierului pe sistemul de fișiere
     full_file_path = os.path.join(ARCHIVE_DIR, site, version, page_path)
     print(f"[SERVER-DEBUG] Attempting to serve file from absolute path: {full_file_path}")
 
-    # Asigură-te că calea solicitată este în interiorul directorului snapshot
-    # pentru a preveni atacuri de tip directory traversal.
     snapshot_base_dir = os.path.abspath(os.path.join(ARCHIVE_DIR, site, version))
     requested_abs_path = os.path.abspath(full_file_path)
 
@@ -190,16 +183,14 @@ def view_snapshot_page(site, version, page_path):
     # Determină tipul MIME al fișierului
     mime_type, _ = mimetypes.guess_type(full_file_path)
     if mime_type is None:
-        mime_type = 'application/octet-stream' # Tip generic dacă nu se poate determina
+        mime_type = 'application/octet-stream' # Tip generic 
     
     print(f"[SERVER-DEBUG] Serving {full_file_path} with MIME type {mime_type}")
     return send_file(full_file_path, mimetype=mime_type)
 
 @app.route("/search")
 def search_archives():
-    """
-    Caută prin domeniile, snapshot-urile și paginile arhivate.
-    """
+    """Caută prin domeniile, snapshot-urile și paginile arhivate."""
     query = request.args.get('query', '').strip().lower()
     results = []
     
@@ -231,7 +222,7 @@ def search_archives():
                             if os.path.exists(page_index_path):
                                 results.append((f"Pagină: {site_name} / {snapshot_name} / {page_folder_name}", url_for('view_snapshot_page', site=site_name, version=snapshot_name, page_path=f"{page_folder_name}/index.html")))
 
-    # Elimină duplicatele din rezultate (dacă o cale a fost adăugată de mai multe ori)
+    # Elimină duplicatele din rezultate 
     unique_results = []
     seen_links = set()
     for label, link in results:
@@ -247,4 +238,4 @@ if __name__ == "__main__":
     
     print("\n[i] Serverul web pornește...")
     print("[i] Accesează http://127.0.0.1:5000 în browser.")
-    app.run(debug=True) # debug=True pentru depanare, dar False în producție
+    app.run(debug=True) 
